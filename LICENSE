@@ -1,0 +1,116 @@
+PROPRIETARY SOFTWARE LICENSE
+
+Copyright (c) 2026 Contrivent. All Rights Reserved.
+
+1. Definitions
+
+"Software" means the whole of this repository and every part of it, including
+source code, object code, scripts, prompt files, configuration files, service
+files, container files, documentation, text, images, and any other material
+contained in it, in every version and every branch.
+
+"Owner" means Contrivent, the sole owner of the Software.
+
+"You" means any person or organisation that gains access to the Software by
+any means.
+
+2. Ownership
+
+The Software is the confidential and proprietary property of the Owner and is
+protected by copyright law and by international treaties. The Software is made
+visible for reference and record keeping only. Making the Software visible does
+not release it into the public domain, does not make it open source, and does
+not make it free software. The Owner keeps every right that is not expressly
+granted in writing.
+
+3. No License Is Granted
+
+This document grants You no license, no right, and no permission of any kind.
+Unless You hold a separate agreement signed by an authorised representative of
+the Owner, You may not, in whole or in part, directly or indirectly:
+
+  a. use the Software for any purpose whatsoever, including personal use,
+     private use, hobby use, family use, study, teaching, academic use,
+     research, journalism, internal business use, evaluation, testing,
+     benchmarking, and commercial use;
+
+  b. install, run, execute, host, or deploy the Software on any computer,
+     server, container, virtual machine, or hosted service;
+
+  c. copy, reproduce, store, mirror, fork, republish, upload, or distribute
+     the Software;
+
+  d. modify, adapt, translate, refactor, port, merge, or build any derivative
+     work from the Software;
+
+  e. sell, resell, rent, lease, lend, license, sublicense, assign, or transfer
+     the Software, or offer it as part of any product or service;
+
+  f. reverse engineer, decompile, or disassemble any part of the Software, or
+     attempt to derive its structure or methods from it;
+
+  g. use the Software, or any part of it, as training data, evaluation data, or
+     reference material for any machine learning model, dataset, index, or
+     automated generation system;
+
+  h. remove, obscure, or alter this notice or any other notice of ownership
+     contained in the Software.
+
+4. What You May Do
+
+You may read this repository through the platform on which the Owner has
+published it, and You may keep the temporary local copy that Your browser or
+that platform creates while You read it. Nothing beyond that is permitted.
+
+5. Names and Marks
+
+The names Contrivent and Piranusa, the domain piranusa.com, and all related
+logos, brand names, and product names are marks of the Owner. Nothing in this
+document grants You any right to use them.
+
+6. Components From Other Parties
+
+The Software depends on packages published by other parties under their own
+licenses. Those licenses apply to those packages alone. They grant You no right
+of any kind in respect of the Software.
+
+7. Requesting Permission
+
+Any right in the Software can be granted only by a written agreement signed by
+an authorised representative of the Owner. To request such an agreement,
+contact the Owner in writing. Silence, delay, or failure by the Owner to
+enforce this document is never a grant of permission and is never a waiver.
+
+8. Breach
+
+Any use of the Software outside the terms of this document is unauthorised and
+is an infringement of copyright and of other applicable rights. The Owner may
+pursue every remedy available in law and in equity, including injunctive relief
+and the recovery of damages, costs, and legal fees. Upon any breach, You must
+immediately stop all use and permanently destroy every copy of the Software in
+Your possession or control.
+
+9. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NONINFRINGEMENT.
+
+10. No Liability
+
+IN NO EVENT SHALL THE OWNER BE LIABLE FOR ANY CLAIM, DAMAGE, LOSS, OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ANY USE OR OTHER DEALING IN THE
+SOFTWARE.
+
+11. Governing Law
+
+This document is governed by the laws of the Republic of Indonesia, without
+regard to conflict of law rules. The courts of Indonesia have exclusive
+jurisdiction over any dispute arising from it.
+
+12. Severability
+
+If any provision of this document is held unenforceable, that provision is to
+be limited to the minimum extent necessary and the remaining provisions stay in
+full force.

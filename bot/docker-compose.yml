@@ -1,0 +1,11 @@
+services:
+  piranusa-bot:
+    build: .
+    container_name: piranusa-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8055:8055"
+    volumes:
+      - ./data:/app/data

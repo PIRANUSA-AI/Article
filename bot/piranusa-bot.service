@@ -1,0 +1,15 @@
+[Unit]
+Description=Piranusa YouTube transcript bot
+After=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/opt/piranusa-bot/bot
+Environment=BOT_DATA_DIR=/opt/piranusa-bot/data
+ExecStart=/opt/piranusa-bot/.venv/bin/python bot_app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
