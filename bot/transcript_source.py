@@ -5,6 +5,7 @@ import tempfile
 from pathlib import Path
 
 import config
+import settings_store
 import video_source
 import utils_text
 
@@ -70,8 +71,9 @@ def _from_ytdlp(video_id):
         "--sub-format", "json3/vtt/srt", "--convert-subs", "srt",
         "-o", str(outdir / "%(id)s.%(ext)s"), "--no-playlist", "--merge-output-format", "mp4",
     ]
-    if config.YTDLP_PROXY:
-        cmd += ["--proxy", config.YTDLP_PROXY]
+    proxy = settings_store.proxy()
+    if proxy:
+        cmd += ["--proxy", proxy]
     cmd.append(url)
     try:
         subprocess.run(cmd, capture_output=True, text=True, timeout=config.TRANSCRIPT_TIMEOUT * 2)

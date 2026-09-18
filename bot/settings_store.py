@@ -62,7 +62,7 @@ def languages():
 
 
 def proxy():
-    return get("proxy", "")
+    return get("proxy", "") or config.YTDLP_PROXY
 
 
 def normalize_langs(text):

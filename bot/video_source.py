@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import requests
 
 import config
+import settings_store
 import utils_text
 
 
@@ -26,8 +27,9 @@ def _ydl():
         "nocheckcertificate": True,
         "user_agent": config.USER_AGENT,
     }
-    if config.YTDLP_PROXY:
-        opts["proxy"] = config.YTDLP_PROXY
+    proxy = settings_store.proxy()
+    if proxy:
+        opts["proxy"] = proxy
     return yt_dlp.YoutubeDL(opts)
 
 
