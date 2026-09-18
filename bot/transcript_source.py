@@ -1,8 +1,12 @@
 import json
 import re
+import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
+
+import requests
 
 import config
 import settings_store
@@ -59,14 +63,13 @@ def _api_variants():
     base = {"languages": config.TRANSCRIPT_LANGUAGES}
     yield dict(base)
     yield dict(base, languages=["en"])
-    yield dict(base, languages=[config.TRANSCRIPT_LANGUAGES[0]], created="asr")
 
 
 def _from_ytdlp(video_id):
     url = utils_text.watch_url(video_id)
     outdir = Path(tempfile.mkdtemp(prefix="ytt_"))
     cmd = [
-        "yt-dlp", "--skip-download", "--write-subs", "--write-auto-subs",
+        sys.executable, "-m", "yt_dlp", "--skip-download", "--write-subs", "--write-auto-subs",
         "--sub-langs", ",".join(config.TRANSCRIPT_LANGUAGES + ["en.*", "id.*", ".*"]),
         "--sub-format", "json3/vtt/srt", "--convert-subs", "srt",
         "-o", str(outdir / "%(id)s.%(ext)s"), "--no-playlist", "--merge-output-format", "mp4",
@@ -74,6 +77,9 @@ def _from_ytdlp(video_id):
     proxy = settings_store.proxy()
     if proxy:
         cmd += ["--proxy", proxy]
+    cookies = settings_store.cookies_file()
+    if cookies:
+        cmd += ["--cookies", cookies]
     cmd.append(url)
     try:
         subprocess.run(cmd, capture_output=True, text=True, timeout=config.TRANSCRIPT_TIMEOUT * 2)
@@ -136,9 +142,97 @@ def _dedupe(snippets):
     return result
 
 
+def _download_audio(video_id, dest_dir):
+    import yt_dlp
+
+    dest_dir = Path(dest_dir)
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "nocheckcertificate": True,
+        "user_agent": config.USER_AGENT,
+        "format": "bestaudio/best",
+        "outtmpl": str(dest_dir / "audio.%(ext)s"),
+        "retries": 3,
+    }
+    proxy = settings_store.proxy()
+    if proxy:
+        opts["proxy"] = proxy
+    cookies = settings_store.cookies_file()
+    if cookies:
+        opts["cookiefile"] = cookies
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ydl.download([utils_text.watch_url(video_id)])
+    for item in sorted(dest_dir.glob("audio.*")):
+        if item.stat().st_size > 20000:
+            return item
+    return None
+
+
+def _from_deepgram(video_id):
+    key = settings_store.deepgram_key()
+    if not key:
+        raise TranscriptError("deepgram: kunci belum diisi")
+    outdir = Path(tempfile.mkdtemp(prefix="dg_"))
+    try:
+        audio = _download_audio(video_id, outdir)
+        if not audio:
+            raise TranscriptError("deepgram: audio tidak ditemukan")
+        payload = audio.read_bytes()
+    except TranscriptError:
+        shutil.rmtree(outdir, ignore_errors=True)
+        raise
+    except Exception as exc:
+        shutil.rmtree(outdir, ignore_errors=True)
+        raise TranscriptError("deepgram: audio gagal diunduh, %s" % str(exc)[:160])
+    shutil.rmtree(outdir, ignore_errors=True)
+    params = {
+        "model": config.DEEPGRAM_MODEL,
+        "detect_language": "true",
+        "smart_format": "true",
+        "punctuate": "true",
+        "utterances": "true",
+    }
+    try:
+        resp = requests.post(
+            "https://api.deepgram.com/v1/listen",
+            params=params,
+            data=payload,
+            headers={"Authorization": "Token " + key, "Content-Type": "audio/*"},
+            timeout=config.DEEPGRAM_TIMEOUT,
+        )
+    except Exception as exc:
+        raise TranscriptError("deepgram: %s" % str(exc)[:160])
+    if resp.status_code != 200:
+        raise TranscriptError("deepgram: HTTP %s %s" % (resp.status_code, resp.text[:160]))
+    try:
+        results = resp.json().get("results") or {}
+    except (json.JSONDecodeError, ValueError):
+        raise TranscriptError("deepgram: jawaban bukan JSON")
+    snippets = []
+    for item in results.get("utterances") or []:
+        text = _clean_text(item.get("transcript") or "")
+        if not text:
+            continue
+        start = float(item.get("start") or 0.0)
+        end = float(item.get("end") or start)
+        snippets.append({"start": start, "duration": max(0.5, end - start), "text": text})
+    channels = results.get("channels") or []
+    if not snippets and channels:
+        alt = (channels[0].get("alternatives") or [{}])[0]
+        text = _clean_text(alt.get("transcript") or "")
+        if text:
+            snippets = [{"start": 0.0, "duration": 0.0, "text": text}]
+    if not snippets:
+        raise TranscriptError("deepgram: hasil kosong")
+    language = (channels[0].get("detected_language") if channels else "") or config.TRANSCRIPT_LANGUAGES[0]
+    return {"snippets": snippets, "language": language, "source": "deepgram"}
+
+
 def fetch(video_id):
     errors = []
-    for func in (_from_api, _from_ytdlp):
+    for func in (_from_api, _from_ytdlp, _from_deepgram):
         try:
             data = func(video_id)
             if data and data.get("snippets"):

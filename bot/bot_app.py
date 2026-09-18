@@ -102,6 +102,7 @@ HELP_TEXT = (
     "/wp url user password : sambungkan ke WordPress\n"
     "/mode push, xml, atau both : cara kirim hasil\n"
     "/wppost draft atau publish : status awal artikel di WordPress\n"
+    "/kunci : lihat kunci akses, /kunci baru untuk ganti\n"
     "/status : kondisi bot\n"
     "/batal : hentikan proses yang berjalan"
 )
@@ -134,10 +135,42 @@ def esc(text):
 
 
 def authorized(update):
-    if settings_store.get("allow_all", False) or not config.ALLOWED_USER_IDS:
-        return True
     user = update.effective_user
-    return bool(user and user.id in config.ALLOWED_USER_IDS)
+    if not user:
+        return False
+    if settings_store.get("allow_all", False):
+        return True
+    if config.ALLOWED_USER_IDS and user.id in config.ALLOWED_USER_IDS:
+        return True
+    return settings_store.is_unlocked(user.id)
+
+
+async def key_gate(update):
+    if authorized(update):
+        return True
+    message = update.effective_message
+    user = update.effective_user
+    if not message or not user:
+        return False
+    given = (message.text or "").strip().upper()
+    if given.startswith("/KUNCI"):
+        given = given[6:].strip()
+    given = given.replace(" ", "")
+    if given and given == settings_store.app_key():
+        settings_store.unlock(user.id)
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        await message.chat.send_message(
+            "Kunci benar, akses dibuka. Kirim link YouTube, foto, atau teks panjang.",
+            parse_mode=ParseMode.HTML,
+            link_preview_options=NO_PREVIEW,
+        )
+        return False
+    log.info("akses ditolak user_id=%s", user.id)
+    await reply(message, "Bot ini terkunci. Kirim dulu kunci aksesnya, 6 karakter, minta ke tim.")
+    return False
 
 
 def current_draft_id(key):
@@ -486,9 +519,7 @@ async def on_message(update, context):
     message = update.effective_message
     if not message or not message.text:
         return
-    if not authorized(update):
-        log.info("ditolak user_id=%s", message.from_user.id)
-        await reply(message, "Bot ini khusus tim internal. ID kamu belum masuk daftar putih.")
+    if not await key_gate(update):
         return
     await react_user(message)
     key = STATE.key(update)
@@ -593,8 +624,7 @@ async def on_photo(update, context):
     message = update.effective_message
     if not message:
         return
-    if not authorized(update):
-        await reply(message, "Bot ini khusus tim internal.")
+    if not await key_gate(update):
         return
     key = STATE.key(update)
     try:
@@ -694,7 +724,7 @@ async def show_featured_picker(message, draft):
 async def on_button(update, context):
     query = update.callback_query
     if not authorized(update):
-        await query.answer("Khusus tim internal.", show_alert=True)
+        await query.answer("Bot terkunci. Kirim kunci aksesnya di chat dulu.", show_alert=True)
         return
     data = view.parse_cb(query.data)
     if not data:
@@ -861,7 +891,7 @@ async def cmd_status(update, context):
         esc(values.get("wp_status") or "draft"),
         esc(str(base)),
         port,
-        "semua user" if (values.get("allow_all") or not config.ALLOWED_USER_IDS) else "daftar putih",
+        "terbuka untuk semua" if values.get("allow_all") else "dikunci, %d user sudah masuk" % len(settings_store.unlocked_users()),
     )
     await reply(update.effective_message, text)
 
@@ -926,6 +956,29 @@ async def cmd_allow(update, context):
     current = bool(settings_store.get("allow_all", False))
     settings_store.set_value("allow_all", not current)
     await reply(update.effective_message, "Akses terbuka untuk semua user: <code>%s</code>." % str(not current))
+
+
+async def cmd_key(update, context):
+    args = [item.lower() for item in (context.args or [])]
+    message = update.effective_message
+    if args and args[0] in ("baru", "ganti", "reset"):
+        value = settings_store.rotate_app_key()
+        await reply(
+            message,
+            "Kunci baru: <code>%s</code>\nSemua yang tadi sudah terbuka harus kirim kunci ini lagi." % esc(value),
+        )
+        return
+    if args and args[0] in ("siapa", "daftar", "user"):
+        people = settings_store.unlocked_users()
+        await reply(
+            message,
+            "User yang sudah terbuka: <code>%s</code>" % esc(", ".join(str(item) for item in people) or "belum ada"),
+        )
+        return
+    await reply(
+        message,
+        "Kunci akses: <code>%s</code>\nBagikan ke tim. Ganti kapan saja dengan <code>/kunci baru</code>." % esc(settings_store.app_key()),
+    )
 
 
 async def cmd_wp(update, context):
@@ -1098,8 +1151,7 @@ async def cmd_search(update, context):
 
 def guarded(handler):
     async def wrapper(update, context):
-        if not authorized(update):
-            await reply(update.effective_message, "Bot ini khusus tim internal.")
+        if not await key_gate(update):
             return
         await react_user(update.effective_message)
         await handler(update, context)
@@ -1144,6 +1196,7 @@ def build_application():
     app.add_handler(CommandHandler("mode", guarded(cmd_mode)))
     app.add_handler(CommandHandler(["wppost", "statusartikel"], guarded(cmd_wppost)))
     app.add_handler(CommandHandler("allow", guarded(cmd_allow)))
+    app.add_handler(CommandHandler("kunci", guarded(cmd_key)))
     app.add_handler(CommandHandler("status", guarded(cmd_status)))
     app.add_handler(CommandHandler(["batal", "cancel"], guarded(cmd_cancel)))
     app.add_handler(CommandHandler("cari", guarded(cmd_search)))
@@ -1157,6 +1210,7 @@ def build_application():
 def main():
     port = media_server.start()
     log.info("media server mendengarkan di port %d", port)
+    log.info("kunci akses: %s", settings_store.app_key())
     app = build_application()
     app.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 

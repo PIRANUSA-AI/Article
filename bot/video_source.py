@@ -30,6 +30,9 @@ def _ydl():
     proxy = settings_store.proxy()
     if proxy:
         opts["proxy"] = proxy
+    cookies = settings_store.cookies_file()
+    if cookies:
+        opts["cookiefile"] = cookies
     return yt_dlp.YoutubeDL(opts)
 
 
@@ -122,6 +125,9 @@ def _download_source(video_info, dest_dir):
     proxy = settings_store.proxy()
     if proxy:
         opts["proxy"] = proxy
+    cookies = settings_store.cookies_file()
+    if cookies:
+        opts["cookiefile"] = cookies
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([video_info.get("url") or utils_text.watch_url(video_info["video_id"])])

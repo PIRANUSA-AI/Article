@@ -1,10 +1,13 @@
 import json
 import re
+import secrets
 from pathlib import Path
 
 import config
 
 SETTINGS_FILE = config.DATA_DIR / "settings.json"
+KEY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+KEY_LENGTH = 6
 DEFAULTS = {
     "languages": None,
     "proxy": "",
@@ -12,6 +15,9 @@ DEFAULTS = {
     "frame": None,
     "public_base": None,
     "allow_all": False,
+    "app_key": "",
+    "unlocked_users": [],
+    "deepgram_key": "",
     "publish_mode": "push",
     "wp_url": config.WP_URL,
     "wp_user": config.WP_USER,
@@ -63,6 +69,68 @@ def languages():
 
 def proxy():
     return get("proxy", "") or config.YTDLP_PROXY
+
+
+def cookies_file():
+    path = Path(config.YTDLP_COOKIES)
+    return str(path) if path.is_file() else ""
+
+
+def deepgram_key():
+    return str(get("deepgram_key", "") or "").strip() or config.DEEPGRAM_API_KEY
+
+
+def _make_key():
+    return "".join(secrets.choice(KEY_ALPHABET) for _ in range(KEY_LENGTH))
+
+
+def app_key():
+    value = str(get("app_key", "") or "").strip().upper()
+    if len(value) == KEY_LENGTH:
+        return value
+    value = _make_key()
+    set_value("app_key", value)
+    return value
+
+
+def rotate_app_key():
+    value = _make_key()
+    set_value("app_key", value)
+    set_value("unlocked_users", [])
+    return value
+
+
+def unlocked_users():
+    raw = get("unlocked_users", []) or []
+    out = []
+    for item in raw:
+        try:
+            out.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def is_unlocked(user_id):
+    try:
+        return int(user_id) in unlocked_users()
+    except (TypeError, ValueError):
+        return False
+
+
+def unlock(user_id):
+    values = unlocked_users()
+    user_id = int(user_id)
+    if user_id not in values:
+        values.append(user_id)
+        set_value("unlocked_users", values)
+    return values
+
+
+def lock(user_id):
+    values = [item for item in unlocked_users() if item != int(user_id)]
+    set_value("unlocked_users", values)
+    return values
 
 
 def normalize_langs(text):
