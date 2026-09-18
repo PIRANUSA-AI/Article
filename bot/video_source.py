@@ -100,10 +100,51 @@ def download_thumbnail(video_info, dest_dir):
     return None
 
 
-def _ffmpeg_frame(stream_url, seconds, out_path):
+def _download_source(video_info, dest_dir):
+    import yt_dlp
+
+    dest_dir = Path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    for existing in sorted(dest_dir.glob("source.*")):
+        if existing.stat().st_size > 200000:
+            return str(existing)
+    cap = config.FRAME_MAX_HEIGHT
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "noplaylist": True,
+        "nocheckcertificate": True,
+        "user_agent": config.USER_AGENT,
+        "format": "bv*[height<=%d]/b[height<=%d]/bv*/b" % (cap, cap),
+        "outtmpl": str(dest_dir / "source.%(ext)s"),
+        "retries": 3,
+    }
+    proxy = settings_store.proxy()
+    if proxy:
+        opts["proxy"] = proxy
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            ydl.download([video_info.get("url") or utils_text.watch_url(video_info["video_id"])])
+    except Exception:
+        return None
+    for made in sorted(dest_dir.glob("source.*")):
+        if made.stat().st_size > 200000:
+            return str(made)
+    return None
+
+
+def _frame_source(video_info, dest_dir):
+    if settings_store.proxy():
+        local = _download_source(video_info, dest_dir)
+        if local:
+            return local
+    return video_info.get("stream_url")
+
+
+def _ffmpeg_frame(source, seconds, out_path):
     cmd = [
         config.FFMPEG_BIN, "-hide_banner", "-loglevel", "error", "-y",
-        "-ss", str(max(0, int(seconds))), "-i", stream_url,
+        "-ss", str(max(0, int(seconds))), "-i", source,
         "-frames:v", "1",
         "-vf", "scale=-2:%d" % config.FRAME_MAX_HEIGHT,
         "-q:v", "2",
@@ -124,14 +165,14 @@ def grab_frames(video_info, dest_dir, count=None):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     duration = max(1, int(video_info.get("duration") or 0))
-    stream_url = video_info.get("stream_url")
+    source = _frame_source(video_info, dest_dir)
     frames = []
-    if not stream_url:
+    if not source:
         return frames
     points = _sample_points(duration, count or config.FRAME_COUNT)
     for index, point in enumerate(points):
         out_path = dest_dir / ("frame_%02d_%ds.jpg" % (index, point))
-        made = _ffmpeg_frame(stream_url, point, out_path)
+        made = _ffmpeg_frame(source, point, out_path)
         if made:
             frames.append({"path": made, "seconds": point, "label": _fmt_time(point)})
         time.sleep(0.4)
@@ -142,13 +183,13 @@ def frame_at(video_info, seconds, dest_dir):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     seconds = max(0, int(seconds))
-    stream_url = video_info.get("stream_url")
-    if not stream_url:
+    source = _frame_source(video_info, dest_dir)
+    if not source:
         return None
     out_path = dest_dir / ("frame_custom_%ds.jpg" % seconds)
-    made = _ffmpeg_frame(stream_url, seconds, out_path)
+    made = _ffmpeg_frame(source, seconds, out_path)
     if not made:
-        made = _ffmpeg_frame(stream_url, max(0, seconds - 5), out_path)
+        made = _ffmpeg_frame(source, max(0, seconds - 5), out_path)
     if not made:
         return None
     return {"path": made, "seconds": seconds, "label": _fmt_time(seconds), "kind": "requested"}
