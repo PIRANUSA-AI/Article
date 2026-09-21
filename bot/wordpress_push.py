@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 
 import config
+import drafts
 import wxr_builder
 
 
@@ -330,6 +331,15 @@ def push(draft, values, on_progress=None, status=None):
     featured = next((img for img in images if img.get("role") == "featured" and img.get("media_id")), None)
     if featured:
         payload["featured_media"] = featured["media_id"]
+
+    video_id = (draft.get("source") or {}).get("video_id")
+    if not wp.get("post_id") and video_id:
+        known = drafts.find_post_for_video(video_id, client.base)
+        if known:
+            candidate = client.get_post(known)
+            if candidate is not None and candidate.get("status") in ("draft", "pending", "private", "publish"):
+                wp["post_id"] = known
+                wp["status"] = candidate.get("status")
 
     current_status = wp.get("status")
     if not current_status or current_status in ("draft", "pending", "auto-draft"):

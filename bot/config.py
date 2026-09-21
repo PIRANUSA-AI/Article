@@ -89,6 +89,16 @@ TRANSCRIPT_TIMEOUT = _env_int("TRANSCRIPT_TIMEOUT", 60)
 YTDLP_PROXY = _env("YTDLP_PROXY", "")
 YTDLP_COOKIES = _env("YTDLP_COOKIES", str(DATA_DIR / "cookies.txt"))
 
+SIPIRA_API = _env("SIPIRA_API", "")
+SIPIRA_BASE = _env("SIPIRA_BASE", "https://sipira.contrivent.com/api")
+SIPIRA_CAMPAIGN = _env("SIPIRA_CAMPAIGN", "we26")
+SIPIRA_TEXT = _env(
+    "SIPIRA_TEXT",
+    "Halo Piranusa, saya tertarik solusi software Piranusa dan mau konsultasi gratis. Boleh dibantu?",
+)
+SIPIRA_BUTTON = _env("SIPIRA_BUTTON", "Konsultasi Gratis via WhatsApp")
+SIPIRA_TIMEOUT = _env_int("SIPIRA_TIMEOUT", 30)
+
 DEEPGRAM_API_KEY = _env("DEEPGRAM_API_KEY", "")
 DEEPGRAM_MODEL = _env("DEEPGRAM_MODEL", "nova-3-general")
 DEEPGRAM_TIMEOUT = _env_int("DEEPGRAM_TIMEOUT", 600)

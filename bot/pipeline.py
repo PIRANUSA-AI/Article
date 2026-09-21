@@ -8,6 +8,7 @@ import config
 import drafts
 import humanizer
 import image_picker
+import sipira
 import site_links
 import transcript_source
 import video_source
@@ -177,6 +178,8 @@ def create(video_id=None, image_paths=None, text=None, caption=None, brief=None,
         "wp": {},
         "history": [],
     }
+    _say(on_progress, "Bikin tombol CTA...")
+    draft["cta_url"] = sipira.cta_url(wxr_builder.slug_for(draft), article.get("title"))
     (work_dir / "material.txt").write_text(material, encoding="utf-8")
     keyword_alt(draft)
     write_markdown(draft)

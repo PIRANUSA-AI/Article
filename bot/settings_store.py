@@ -18,6 +18,8 @@ DEFAULTS = {
     "app_key": "",
     "unlocked_users": [],
     "deepgram_key": "",
+    "sipira_key": "",
+    "sipira_campaign": "",
     "publish_mode": "push",
     "wp_url": config.WP_URL,
     "wp_user": config.WP_USER,
@@ -78,6 +80,14 @@ def cookies_file():
 
 def deepgram_key():
     return str(get("deepgram_key", "") or "").strip() or config.DEEPGRAM_API_KEY
+
+
+def sipira_key():
+    return str(get("sipira_key", "") or "").strip() or config.SIPIRA_API
+
+
+def sipira_campaign():
+    return str(get("sipira_campaign", "") or "").strip() or config.SIPIRA_CAMPAIGN
 
 
 def _make_key():

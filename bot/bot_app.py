@@ -66,6 +66,7 @@ INTENT_SYSTEM = (
     "set_brief: user memberi arahan gaya atau sudut pandang untuk artikel berikutnya.\n"
     "set_frame: user minta cuplikan diambil pada detik atau menit tertentu.\n"
     "search_time: user mencari kapan sebuah kata diucapkan.\n"
+    "publish: user menyuruh menayangkan/mempublikasikan draf terakhir, misalnya 'yaudah publish', 'terbitkan', 'sebar', 'tayangkan', 'go public'.\n"
     "status: user menanyakan kondisi bot.\n"
     "help: user minta panduan.\n"
     "cancel: user membatalkan proses.\n"

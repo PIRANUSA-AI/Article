@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 import requests
@@ -34,7 +35,13 @@ def _clean_text(text):
 def _from_api(video_id):
     from youtube_transcript_api import YouTubeTranscriptApi
 
-    api = YouTubeTranscriptApi()
+    init_kwargs = {}
+    proxy = settings_store.proxy()
+    if proxy:
+        from youtube_transcript_api.proxies import ProxyConfig
+
+        init_kwargs["proxy_config"] = ProxyConfig(http=proxy, https=proxy)
+    api = YouTubeTranscriptApi(**init_kwargs)
     errors = []
     for kwargs in _api_variants():
         try:
@@ -162,8 +169,18 @@ def _download_audio(video_id, dest_dir):
     cookies = settings_store.cookies_file()
     if cookies:
         opts["cookiefile"] = cookies
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ydl.download([utils_text.watch_url(video_id)])
+    last_error = None
+    for attempt in range(3):
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([utils_text.watch_url(video_id)])
+            break
+        except Exception as exc:
+            last_error = exc
+            if attempt < 2:
+                time.sleep(4 * (attempt + 1))
+    else:
+        raise TranscriptError("deepgram: audio gagal diunduh, %s" % str(last_error)[:160])
     for item in sorted(dest_dir.glob("audio.*")):
         if item.stat().st_size > 20000:
             return item

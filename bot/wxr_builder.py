@@ -89,6 +89,19 @@ def _group(inner_blocks, class_name):
     )
 
 
+def _button(text, url):
+    outer = {"layout": {"type": "flex", "justifyContent": "center"}}
+    inner = {"linkTarget": "_blank", "rel": "noreferrer noopener nofollow"}
+    return (
+        '<!-- wp:buttons%s -->\n<div class="wp-block-buttons">\n'
+        "<!-- wp:button%s -->\n"
+        '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="%s" '
+        'target="_blank" rel="noreferrer noopener nofollow">%s</a></div>\n'
+        "<!-- /wp:button -->\n"
+        "</div>\n<!-- /wp:buttons -->"
+    ) % (_attrs(outer), _attrs(inner), _esc(url), _esc(text))
+
+
 def _table(head, rows, class_name):
     attrs = {"hasFixedLayout": True, "className": class_name, "fontSize": "small"}
     head_html = "".join("<th>%s</th>" % _inline(cell) for cell in head)
@@ -171,7 +184,10 @@ def render_content(draft, media):
         blocks.append(_paragraph(para))
 
     if article.get("cta"):
-        blocks.append(_group([_paragraph("**%s**" % article["cta"])], "pipCta"))
+        cta_blocks = [_paragraph("**%s**" % article["cta"])]
+        if draft.get("cta_url"):
+            cta_blocks.append(_button(config.SIPIRA_BUTTON, draft["cta_url"]))
+        blocks.append(_group(cta_blocks, "pipCta"))
 
     if article["glossary"]:
         blocks.append(_heading("Glosarium", 2))

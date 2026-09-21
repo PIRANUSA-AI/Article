@@ -87,6 +87,27 @@ def undo(draft):
     return last["label"]
 
 
+def find_post_for_video(video_id, site):
+    best = None
+    for path in config.DRAFTS_DIR.glob("*.json"):
+        if path.name == INDEX_FILE.name:
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if (data.get("source") or {}).get("video_id") != video_id:
+            continue
+        wp = data.get("wp") or {}
+        post_id = wp.get("post_id")
+        if not post_id or (wp.get("site") or "") != site:
+            continue
+        stamp = data.get("updated") or ""
+        if best is None or stamp > best[0]:
+            best = (stamp, int(post_id))
+    return best[1] if best else None
+
+
 def latest_for(owner):
     candidates = []
     for path in config.DRAFTS_DIR.glob("*.json"):
