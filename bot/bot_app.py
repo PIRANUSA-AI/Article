@@ -20,10 +20,12 @@ import pipeline
 import qwen_client
 import settings_store
 import telegram_view as view
+import testimonial
 import transcript_source
 import utils_text
 import video_source
 import wordpress_push
+import youtube_watch
 
 logging.basicConfig(format="%(asctime)s %(levelname)s %(name)s | %(message)s", level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -95,6 +97,7 @@ HELP_TEXT = (
     "/judul : pilihan judul draf terakhir\n"
     "/selesai : keluar dari mode revisi\n"
     "/cari kata : menit kemunculan kata di video terakhir\n"
+    "/youtube : cek video channel yang belum jadi artikel atau testimoni\n"
     "/bahasa id en : prioritas bahasa subtitle\n"
     "/frame 3:20 : cuplikan di menit itu ikut ditawarkan untuk isi artikel\n"
     "/brief arahan : gaya atau sudut pandang artikel berikutnya\n"
@@ -120,6 +123,7 @@ class State:
         self.last_draft = {}
         self.edit_target = {}
         self.albums = {}
+        self.watcher = None
 
     @staticmethod
     def key(update):
@@ -306,8 +310,12 @@ def local_ip():
 
 async def send_card(message, draft, headline="Draf siap"):
     settings = settings_store.all_values()
-    text = view.card_text(draft, headline)
-    markup = view.card_keyboard(draft, wordpress_push.ready(settings))
+    if draft.get("kind") == "testimonial":
+        text = view.testimonial_text(draft, "Testimoni siap" if headline == "Draf siap" else headline)
+        markup = view.testimonial_keyboard(draft, wordpress_push.ready(settings))
+    else:
+        text = view.card_text(draft, headline)
+        markup = view.card_keyboard(draft, wordpress_push.ready(settings))
     featured = next((img for img in draft["images"] if img["role"] == "featured"), None)
     sent = None
     plain_length = len(re.sub(r"<[^>]+>", "", text))
@@ -392,7 +400,29 @@ async def create_article(update, title, **kwargs):
     await deliver(message, draft, status, settings)
 
 
+async def deliver_testimonial(message, draft, status, settings):
+    note = None
+    if wordpress_push.ready(settings):
+        await safe_edit(status, "<b>Testimoni selesai disusun.</b>\nMengirim ke modul Testimoni WordPress...")
+        try:
+            await asyncio.to_thread(testimonial.push, draft, settings)
+        except Exception as exc:
+            log.error("push testimoni gagal: %s", exc)
+            note = "Kirim testimoni ke WordPress gagal: <code>%s</code>" % esc(str(exc)[:300])
+        drafts.save(draft)
+    else:
+        note = "WordPress belum tersambung, pakai /wp dulu lalu tekan Kirim ke WordPress."
+    await safe_edit(status, "<b>Selesai.</b> Video ini testimoni, jadi masuk modul Testimoni. Kartunya ada di bawah.")
+    drafts.remember_message(draft["id"], status.chat_id, status.message_id)
+    await send_card(message, draft)
+    if note:
+        await reply(message, note)
+
+
 async def deliver(message, draft, status, settings):
+    if draft.get("kind") == "testimonial":
+        await deliver_testimonial(message, draft, status, settings)
+        return
     mode = settings.get("publish_mode") or "push"
     ready = wordpress_push.ready(settings)
     notes = []
@@ -424,6 +454,9 @@ async def revision_job(update, draft_id, instruction, image_path=None):
     draft = drafts.load(draft_id)
     if not draft:
         await reply(message, "Draf itu sudah tidak ada di bot.")
+        return
+    if draft.get("kind") == "testimonial":
+        await reply(message, "Ini testimoni, bukan artikel. Ubah kutipan atau namanya langsung di WordPress lewat tombol Edit di kartunya.")
         return
     STATE.last_draft[key] = draft_id
     title = "Menambah foto ke draf" if image_path else "Merevisi draf"
@@ -691,6 +724,9 @@ async def show_titles(message, draft_id):
     if not draft:
         await reply(message, "Belum ada draf. Kirim link YouTube, foto, atau catatan dulu.")
         return
+    if draft.get("kind") == "testimonial":
+        await reply(message, "Draf terakhir adalah testimoni, jadi tidak punya pilihan judul.")
+        return
     sent = await reply(message, view.titles_text(draft), reply_markup=view.titles_keyboard(draft))
     drafts.remember_message(draft["id"], sent.chat_id, sent.message_id)
 
@@ -741,6 +777,15 @@ async def on_button(update, context):
     arg = data["arg"]
     message = query.message
     settings = settings_store.all_values()
+    if action == "ta":
+        video_id = (draft.get("source") or {}).get("video_id")
+        if not video_id:
+            await query.answer("Video sumbernya tidak ketemu.", show_alert=True)
+            return
+        await query.answer("Menulis ulang sebagai artikel...")
+        if not start_task(update, create_article(update, "Menulis artikel dari video", video_id=video_id, mode="article")):
+            await busy_notice(message)
+        return
     try:
         await handle_button(query, message, draft, action, arg, settings, key)
     except Exception as exc:
@@ -850,6 +895,16 @@ async def handle_button(query, message, draft, action, arg, settings, key):
         await asyncio.to_thread(wordpress_push.push, draft, settings)
         drafts.save(draft)
         await send_card(message, draft, "Draf masuk WordPress")
+    elif action == "tw":
+        if not wordpress_push.ready(settings):
+            await query.answer("WordPress belum tersambung. Pakai /wp dulu.", show_alert=True)
+            return
+        await query.answer("Mengirim testimoni...")
+        try:
+            await asyncio.to_thread(testimonial.push, draft, settings)
+        finally:
+            drafts.save(draft)
+        await send_card(message, draft, "Testimoni masuk WordPress")
     elif action == "x":
         await query.answer("Menyiapkan file...")
         await send_files(message, draft)
@@ -1150,6 +1205,105 @@ async def cmd_search(update, context):
     await reply(update.effective_message, "\n".join(lines))
 
 
+WATCH_INTERVAL = 1200
+WATCH_NEW_LIMIT = 8
+
+
+def reminder_recipients():
+    return list(dict.fromkeys(list(config.ALLOWED_USER_IDS) + settings_store.unlocked_users()))
+
+
+def reminder_batch(kind, data, limit=None):
+    pool = data["new"] if kind == "new" else data["backlog"]
+    size = limit or (WATCH_NEW_LIMIT if kind == "new" else config.REMINDER_BACKLOG_COUNT)
+    return pool[:size], max(0, len(pool) - size)
+
+
+async def send_reminder(bot, chat_id, kind, videos, remaining):
+    try:
+        await bot.send_message(
+            chat_id,
+            view.watch_text(kind, videos, remaining),
+            parse_mode=ParseMode.HTML,
+            link_preview_options=NO_PREVIEW,
+            reply_markup=view.watch_keyboard(videos),
+        )
+    except Exception as exc:
+        log.warning("pengingat ke %s gagal: %s", chat_id, exc)
+
+
+async def watch_loop(app):
+    while True:
+        try:
+            kinds = youtube_watch.due()
+            if kinds:
+                data = await asyncio.to_thread(youtube_watch.report)
+                for kind in kinds:
+                    videos, remaining = reminder_batch(kind, data)
+                    if videos:
+                        for chat_id in reminder_recipients():
+                            await send_reminder(app.bot, chat_id, kind, videos, remaining)
+                    youtube_watch.mark(kind)
+                    log.info("pengingat %s: %d video dikirim", kind, len(videos))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.error("cek channel YouTube gagal: %s", exc)
+        await asyncio.sleep(WATCH_INTERVAL)
+
+
+async def start_watch(app):
+    STATE.watcher = asyncio.create_task(watch_loop(app))
+
+
+async def cmd_youtube(update, context):
+    message = update.effective_message
+    status = await reply(message, "Mengecek channel YouTube dan WordPress...")
+    try:
+        data = await asyncio.to_thread(youtube_watch.report)
+    except Exception as exc:
+        log.error("cek channel gagal: %s", exc)
+        await safe_edit(status, "Gagal mengecek channel. %s" % public_error(str(exc)))
+        return
+    await safe_edit(
+        status,
+        "<b>Channel YouTube</b>\n%d video, %d sudah jadi artikel atau testimoni, %d video baru dan %d video lama belum diproses."
+        % (data["total"], data["covered"], len(data["new"]), len(data["backlog"])),
+    )
+    for kind, limit in (("new", WATCH_NEW_LIMIT), ("backlog", 5)):
+        videos, remaining = reminder_batch(kind, data, limit)
+        if videos:
+            await send_reminder(context.bot, message.chat_id, kind, videos, remaining)
+
+
+async def on_watch_button(update, context):
+    query = update.callback_query
+    if not authorized(update):
+        await query.answer("Bot terkunci. Kirim kunci aksesnya di chat dulu.", show_alert=True)
+        return
+    data = view.parse_watch_cb(query.data)
+    if not data or not utils_text.PLAIN_ID_PATTERN.match(data["video"]):
+        await query.answer()
+        return
+    video_id = data["video"]
+    if data["action"] == "s":
+        youtube_watch.skip(video_id)
+        await query.answer("Oke, video ini tidak akan diingatkan lagi.")
+    else:
+        await query.answer("Memproses video...")
+        STATE.last_video[STATE.key(update)] = video_id
+        if not start_task(update, create_article(update, "Memproses video dari channel", video_id=video_id)):
+            await busy_notice(query.message)
+            return
+    markup = query.message.reply_markup
+    if markup:
+        rows = [row for row in markup.inline_keyboard if not any((button.callback_data or "").endswith(":" + video_id) for button in row)]
+        try:
+            await query.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup(rows) if rows else None)
+        except Exception:
+            pass
+
+
 def guarded(handler):
     async def wrapper(update, context):
         if not await key_gate(update):
@@ -1178,6 +1332,7 @@ def build_application():
         .read_timeout(60)
         .write_timeout(60)
         .media_write_timeout(180)
+        .post_init(start_watch)
         .build()
     )
     app.add_handler(CommandHandler(["start", "halo"], guarded(cmd_start)))
@@ -1201,7 +1356,9 @@ def build_application():
     app.add_handler(CommandHandler("status", guarded(cmd_status)))
     app.add_handler(CommandHandler(["batal", "cancel"], guarded(cmd_cancel)))
     app.add_handler(CommandHandler("cari", guarded(cmd_search)))
+    app.add_handler(CommandHandler(["youtube", "yt"], guarded(cmd_youtube)))
     app.add_handler(CallbackQueryHandler(on_button, pattern=r"^d:"))
+    app.add_handler(CallbackQueryHandler(on_watch_button, pattern=r"^y:"))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, on_photo))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_message))
     app.add_error_handler(on_error)

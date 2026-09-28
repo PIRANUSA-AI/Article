@@ -1,4 +1,5 @@
 import logging
+import secrets
 
 import requests
 
@@ -56,33 +57,46 @@ def _find_link(campaign_id, slug):
     return None
 
 
-def make_button(article_slug, label):
-    article_slug = str(article_slug or "").strip()[:80]
-    if not article_slug:
-        raise SipiraError("slug artikel kosong")
-    campaign = _campaign(settings_store.sipira_campaign())
-    campaign_id = campaign["id"]
+def new_code(length=None):
+    size = max(4, int(length or config.SIPIRA_CODE_LENGTH))
+    return "".join(secrets.choice(config.SIPIRA_CODE_ALPHABET) for _ in range(size))
+
+
+def _post_link(campaign_id, code, label):
     body = {
-        "label": (str(label or "").strip() or article_slug)[:160],
-        "slug": article_slug,
+        "label": (str(label or "").strip() or code)[:160],
+        "slug": code,
         "default_text": config.SIPIRA_TEXT[:2000],
     }
-    resp = requests.post(
+    return requests.post(
         _base() + "/public/campaigns/%s/links" % campaign_id,
         headers=_headers(),
         json=body,
         timeout=config.SIPIRA_TIMEOUT,
     )
-    if resp.status_code == 201:
-        url = (_payload(resp) or {}).get("short_url")
-        if url:
-            return url
-        raise SipiraError("sub url dibuat tapi short_url kosong")
-    if resp.status_code in (400, 409):
-        found = _find_link(campaign_id, article_slug)
+
+
+def make_button(label, code=None):
+    campaign = _campaign(settings_store.sipira_campaign())
+    campaign_id = campaign["id"]
+    if code:
+        found = _find_link(campaign_id, code)
         if found and found.get("short_url"):
-            return found["short_url"]
-    raise SipiraError("bikin sub url gagal, HTTP %s %s" % (resp.status_code, (resp.text or "")[:150]))
+            return {"url": found["short_url"], "code": code}
+    last = None
+    for _ in range(4):
+        candidate = new_code()
+        resp = _post_link(campaign_id, candidate, label)
+        if resp.status_code == 201:
+            payload = _payload(resp) or {}
+            url = payload.get("short_url")
+            if url:
+                return {"url": url, "code": payload.get("slug") or candidate}
+            raise SipiraError("sub url dibuat tapi short_url kosong")
+        last = "HTTP %s %s" % (resp.status_code, (resp.text or "")[:150])
+        if resp.status_code not in (400, 409):
+            break
+    raise SipiraError("bikin sub url gagal, %s" % last)
 
 
 def fallback_url():
@@ -92,9 +106,9 @@ def fallback_url():
         return ""
 
 
-def cta_url(article_slug, label):
+def cta_link(label, code=None):
     try:
-        return make_button(article_slug, label)
+        return make_button(label, code)
     except Exception as exc:
         log.warning("sipira gagal, pakai cadangan: %s", str(exc)[:200])
-        return fallback_url()
+        return {"url": fallback_url(), "code": None}

@@ -1,6 +1,7 @@
 import datetime as dt
 import html
 import json
+import random
 import re
 import zipfile
 from pathlib import Path
@@ -89,17 +90,57 @@ def _group(inner_blocks, class_name):
     )
 
 
-def _button(text, url):
-    outer = {"layout": {"type": "flex", "justifyContent": "center"}}
-    inner = {"linkTarget": "_blank", "rel": "noreferrer noopener nofollow"}
-    return (
-        '<!-- wp:buttons%s -->\n<div class="wp-block-buttons">\n'
-        "<!-- wp:button%s -->\n"
-        '<div class="wp-block-button"><a class="wp-block-button__link wp-element-button" href="%s" '
-        'target="_blank" rel="noreferrer noopener nofollow">%s</a></div>\n'
-        "<!-- /wp:button -->\n"
-        "</div>\n<!-- /wp:buttons -->"
-    ) % (_attrs(outer), _attrs(inner), _esc(url), _esc(text))
+CTA_HEADLINES = (
+    "Butuh teman diskusi?",
+    "Masih ada yang bikin ragu?",
+    "Mau langsung dicoba?",
+    "Punya kasus serupa?",
+    "Bingung mulai dari mana?",
+    "Mau hasil yang sama?",
+    "Ada pertanyaan teknis?",
+)
+CTA_LABELS = (
+    "Konsultasi Gratis via WhatsApp",
+    "Tanya Tim Kami di WhatsApp",
+    "Chat Tim Piranusa",
+    "Ngobrol Gratis via WhatsApp",
+    "Diskusi Sekarang di WhatsApp",
+)
+WHATSAPP_ICON = (
+    '<svg viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" focusable="false"><path fill="currentColor" d="M16 3C8.8 3 3 8.7 3 15.8c0 2.5.7 '
+    "4.9 2 7L3 29l6.4-2c2 1.1 4.3 1.7 6.6 1.7 7.2 0 13-5.7 13-12.8S23.2 3 16 3zm0 23.4c-2.1 0-4.1-.6-5.9-1.7l-.4-.3-3.8 1.2 1.2-3.7-.3-.4a10.4 "
+    "10.4 0 0 1-1.8-5.8c0-5.8 4.8-10.5 10.9-10.5s10.9 4.7 10.9 10.5S22.1 26.4 16 26.4zm6-7.8c-.3-.2-1.9-.9-2.2-1s-.5-.2-.7.2-.8 1-1 1.2-.4.2-.7.1a8.9 "
+    "8.9 0 0 1-4.4-3.8c-.3-.6.3-.5.9-1.7.1-.2 0-.4 0-.5l-1-2.4c-.3-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4s-1.2 1.1-1.2 2.7 1.2 3.1 1.4 3.3c.2.2 2.3 "
+    '3.5 5.6 4.9 2.1.9 2.9 1 4 .8.6-.1 1.9-.8 2.2-1.5s.3-1.4.2-1.5c-.1-.2-.3-.3-.6-.4z"/></svg>'
+)
+CTA_STYLE = (
+    ".pipCtaCard{margin:40px 0;padding:28px 24px;border-radius:18px;background:#effaf3;border:1px solid #cfeedd;text-align:center}"
+    ".pipCtaCard .pipCtaTitle{margin:0 0 6px;font-size:1.25em;font-weight:700;line-height:1.3;color:#0b3d24}"
+    ".pipCtaCard .pipCtaText{margin:0 auto 20px;max-width:34em;font-size:1em;line-height:1.6;color:#2f4a3b}"
+    ".pipCtaCard .pipCtaButton{display:inline-flex;align-items:center;gap:10px;padding:13px 26px;border-radius:999px;background:#25d366;"
+    "color:#fff;font-weight:700;font-size:1em;line-height:1.2;text-decoration:none;box-shadow:0 6px 18px rgba(37,211,102,.28);"
+    "transition:transform .15s ease,box-shadow .15s ease,background .15s ease}"
+    ".pipCtaCard .pipCtaButton:hover,.pipCtaCard .pipCtaButton:focus{background:#1ebe5b;color:#fff;transform:translateY(-1px);"
+    "box-shadow:0 10px 24px rgba(37,211,102,.34)}"
+    ".pipCtaCard .pipCtaButton:focus-visible{outline:3px solid #0b3d24;outline-offset:3px}"
+    "@media (max-width:600px){.pipCtaCard{padding:24px 16px}.pipCtaCard .pipCtaButton{width:100%;justify-content:center}}"
+)
+
+
+def cta_copy(draft):
+    picker = random.Random(str(draft.get("id") or draft["article"].get("title")))
+    return {"headline": picker.choice(CTA_HEADLINES), "label": picker.choice(CTA_LABELS)}
+
+
+def _cta_card(text, url, copy):
+    body = (
+        '<div class="pipCtaCard"><style>%s</style>'
+        '<p class="pipCtaTitle">%s</p>'
+        '<p class="pipCtaText">%s</p>'
+        '<a class="pipCtaButton" href="%s" target="_blank" rel="noreferrer noopener nofollow">%s<span>%s</span></a>'
+        "</div>"
+    ) % (CTA_STYLE, _esc(copy["headline"]), _inline(text), _esc(url), WHATSAPP_ICON, _esc(copy["label"]))
+    return "<!-- wp:html -->\n%s\n<!-- /wp:html -->" % body
 
 
 def _table(head, rows, class_name):
@@ -184,10 +225,10 @@ def render_content(draft, media):
         blocks.append(_paragraph(para))
 
     if article.get("cta"):
-        cta_blocks = [_paragraph("**%s**" % article["cta"])]
         if draft.get("cta_url"):
-            cta_blocks.append(_button(config.SIPIRA_BUTTON, draft["cta_url"]))
-        blocks.append(_group(cta_blocks, "pipCta"))
+            blocks.append(_cta_card(article["cta"], draft["cta_url"], cta_copy(draft)))
+        else:
+            blocks.append(_group([_paragraph("**%s**" % article["cta"])], "pipCta"))
 
     if article["glossary"]:
         blocks.append(_heading("Glosarium", 2))

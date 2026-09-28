@@ -8,10 +8,13 @@ import config
 import drafts
 import humanizer
 import image_picker
+import settings_store
 import sipira
 import site_links
+import testimonial
 import transcript_source
 import video_source
+import wordpress_push
 import wxr_builder
 
 
@@ -56,7 +59,42 @@ def _combine_brief(brief, caption):
     return "\n".join(parts) or None
 
 
-def create(video_id=None, image_paths=None, text=None, caption=None, brief=None, frame_seconds=None, owner=None, on_progress=None):
+def _testimonial_draft(draft_id, owner, work_dir, source, video_info, transcript_text, caption, on_progress):
+    _say(on_progress, "Terdeteksi video testimoni, menyusun kutipan...")
+    values = settings_store.all_values()
+    names = []
+    if wordpress_push.ready(values):
+        try:
+            names = list(testimonial.products(wordpress_push.client_for(values)).keys())
+        except Exception:
+            names = []
+    entries = testimonial.extract(video_info, transcript_text, names, caption)
+    images = []
+    thumbnail = video_source.download_thumbnail(video_info, work_dir)
+    if thumbnail:
+        out = Path(work_dir) / "img_t1.jpg"
+        try:
+            info = _normalize_image(thumbnail, out)
+        except Exception:
+            info = {"path": str(thumbnail), "width": 1280, "height": 720}
+        images.append({"key": "T1", "origin": "thumbnail", "label": "thumbnail video", "path": info["path"], "role": "featured", "media_id": None, "url": None})
+    draft = {
+        "id": draft_id,
+        "owner": owner,
+        "kind": "testimonial",
+        "created": drafts.now(),
+        "work_dir": str(work_dir),
+        "source": source,
+        "testimonials": entries,
+        "images": images,
+        "wp": {},
+        "history": [],
+    }
+    drafts.save(draft)
+    return draft
+
+
+def create(video_id=None, image_paths=None, text=None, caption=None, brief=None, frame_seconds=None, owner=None, on_progress=None, mode=None):
     kind = "video" if video_id else ("image" if image_paths else "text")
     if kind == "text" and not (text or "").strip():
         raise PipelineError("tidak ada bahan untuk ditulis")
@@ -82,6 +120,12 @@ def create(video_id=None, image_paths=None, text=None, caption=None, brief=None,
         (work_dir / "transkrip.json").write_text(payload, encoding="utf-8")
         _transcript_cache(video_id).write_text(payload, encoding="utf-8")
         source["transcript"] = {"language": transcript.get("language"), "via": transcript.get("source"), "segments": len(snippets)}
+
+        if mode != "article" and not image_paths:
+            _say(on_progress, "Cek apakah ini video testimoni...")
+            plain = transcript_source.as_plain_text(snippets)
+            if mode == "testimonial" or testimonial.detect(video_info, plain):
+                return _testimonial_draft(draft_id, owner, work_dir, source, video_info, plain, caption, on_progress)
 
         _say(on_progress, "Ambil cuplikan dari video...")
         requested = None
@@ -179,7 +223,9 @@ def create(video_id=None, image_paths=None, text=None, caption=None, brief=None,
         "history": [],
     }
     _say(on_progress, "Bikin tombol CTA...")
-    draft["cta_url"] = sipira.cta_url(wxr_builder.slug_for(draft), article.get("title"))
+    link = sipira.cta_link(article.get("title"))
+    draft["cta_url"] = link["url"]
+    draft["cta_code"] = link["code"]
     (work_dir / "material.txt").write_text(material, encoding="utf-8")
     keyword_alt(draft)
     write_markdown(draft)

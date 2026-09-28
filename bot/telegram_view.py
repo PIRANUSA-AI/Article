@@ -5,6 +5,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 import article_generator
 import pipeline
+import testimonial
 import wxr_builder
 
 STATUS_LABELS = {
@@ -242,6 +243,79 @@ def preview_chunks(draft):
     if current:
         chunks.append(current)
     return chunks
+
+
+def testimonial_text(draft, headline="Testimoni siap"):
+    source = draft.get("source") or {}
+    lines = ["<b>%s</b>" % esc(headline), "", "Sumber: %s" % source_line(dict(draft, kind="video")), ""]
+    for index, entry in enumerate(draft.get("testimonials") or [], start=1):
+        lines.append("<b>%d. %s</b>" % (index, esc(entry["company"])))
+        who = testimonial.role_line(entry)
+        if who:
+            lines.append(esc(who))
+        if entry.get("product"):
+            lines.append("Produk: %s" % esc(entry["product"]))
+        lines.append("<i>%s</i>" % esc(entry["quote"]))
+        if entry.get("post_id"):
+            state = "WordPress: %s, ID %s" % (STATUS_LABELS.get(entry.get("status"), entry.get("status")), entry["post_id"])
+            if entry.get("fields") and entry["fields"] != "ok":
+                state += ". Field ACF belum terisi, isi manual di editor."
+            lines.append(state)
+        else:
+            lines.append("WordPress: belum dikirim")
+        lines.append("")
+    lines.append("Masuk ke modul Testimoni sebagai draf, tampil di homepage dimatikan. Cek nama dan kutipannya di WordPress sebelum tayang.")
+    if source.get("url"):
+        lines.append(esc(source["url"]))
+    return "\n".join(lines)
+
+
+def testimonial_keyboard(draft, wp_ready):
+    rows = []
+    for index, entry in enumerate(draft.get("testimonials") or [], start=1):
+        if entry.get("admin_edit"):
+            rows.append([InlineKeyboardButton("Edit %d. %s" % (index, entry["company"][:30]), url=entry["admin_edit"])])
+    if wp_ready and any(not entry.get("post_id") for entry in draft.get("testimonials") or []):
+        rows.append([InlineKeyboardButton("Kirim ke WordPress", callback_data=cb(draft["id"], "tw"))])
+    rows.append([InlineKeyboardButton("Bukan testimoni, jadikan artikel", callback_data=cb(draft["id"], "ta"))])
+    return InlineKeyboardMarkup(rows)
+
+
+def watch_cb(action, video_id):
+    return "y:%s:%s" % (action, video_id)
+
+
+def parse_watch_cb(data):
+    parts = (data or "").split(":", 2)
+    if len(parts) != 3 or parts[0] != "y":
+        return None
+    return {"action": parts[1], "video": parts[2]}
+
+
+def watch_text(kind, videos, remaining=0):
+    if kind == "new":
+        head = "<b>Ada video YouTube baru nih</b>\nBelum dijadikan artikel atau testimoni:"
+    else:
+        head = "<b>Pengingat video lama</b>\nVideo ini sudah tayang tapi belum jadi artikel atau testimoni:"
+    lines = [head, ""]
+    for index, video in enumerate(videos, start=1):
+        lines.append('%d. <a href="%s">%s</a>' % (index, html.escape(video["url"]), esc(video["title"])))
+    if remaining:
+        lines += ["", "Masih ada %d video lain yang menunggu." % remaining]
+    lines += ["", "Tekan Buat untuk langsung diproses. Video testimoni otomatis masuk modul Testimoni."]
+    return "\n".join(lines)
+
+
+def watch_keyboard(videos):
+    rows = []
+    for index, video in enumerate(videos, start=1):
+        rows.append(
+            [
+                InlineKeyboardButton("Buat %d" % index, callback_data=watch_cb("a", video["id"])),
+                InlineKeyboardButton("Lewati %d" % index, callback_data=watch_cb("s", video["id"])),
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
 
 
 def progress_text(title, steps, failed=None):

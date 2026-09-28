@@ -12,11 +12,14 @@ import drafts
 import humanizer
 import image_picker
 import pipeline
+import sipira
 import telegram_view
+import testimonial
 import transcript_source
 import utils_text
 import video_source
 import wxr_builder
+import youtube_watch
 
 print("imports ok")
 
@@ -202,7 +205,69 @@ assert all(len(d.encode()) <= 64 for d in datas) and "d:selftest:w" in datas
 assert telegram_view.parse_cb("d:selftest:t:3") == {"draft": "selftest", "action": "t", "arg": "3"}
 print("telegram view ok")
 
-for text in (bot_app.HELP_TEXT, card, telegram_view.titles_text(draft)):
+with_cta = dict(draft, cta_url="https://sipira.test/we26/k7Qm2xA")
+cta_html = wxr_builder.render_content(with_cta, {})
+copy = wxr_builder.cta_copy(with_cta)
+assert "<!-- wp:html -->" in cta_html and 'class="pipCtaCard"' in cta_html and "https://sipira.test/we26/k7Qm2xA" in cta_html
+assert copy["headline"] in wxr_builder.CTA_HEADLINES and copy["label"] in wxr_builder.CTA_LABELS and copy["label"] in cta_html
+assert wxr_builder.cta_copy(with_cta) == copy
+assert len({tuple(wxr_builder.cta_copy({"id": "x%d" % n, "article": {}}).values()) for n in range(40)}) > 5
+code = sipira.new_code()
+assert len(code) == config.SIPIRA_CODE_LENGTH and all(ch in config.SIPIRA_CODE_ALPHABET for ch in code)
+print("cta card and sipira code ok")
+
+form_page = (
+    '<form name="post" action="post.php" method="post" id="post">'
+    '<input type="hidden" name="_wpnonce" value="abc"/><input type="hidden" name="_acf_nonce" value="n1"/>'
+    "<input type='checkbox' name='tax_input[produk_terkait][]' value='11' checked='checked'/>"
+    "<input type='checkbox' name='tax_input[produk_terkait][]' value='12'/>"
+    '<input type="submit" name="save" value="Simpan"/>'
+    '<select name="post_status"><option value="draft">Draf</option><option value="publish" selected="selected">Terbit</option></select>'
+    '<textarea name="acf[field_pir_tm_kutipan]">Kami &amp; tim</textarea>'
+    '<input type="url" name="acf[field_pir_tm_video]" value="https://www.youtube.com/watch?v=es6-7gWg2JQ"/>'
+    "</form>"
+)
+fields = testimonial.form_fields(form_page)
+assert ("tax_input[produk_terkait][]", "11") in fields and ("tax_input[produk_terkait][]", "12") not in fields
+assert ("post_status", "publish") in fields and ("acf[field_pir_tm_kutipan]", "Kami & tim") in fields
+assert not any(name == "save" for name, _ in fields)
+assert utils_text.extract_video_id(testimonial.read_video_field(form_page)) == "es6-7gWg2JQ"
+assert testimonial.TITLE_HINT.search("Desain Precast Lebih Efisien dengan ZWCAD | Testimoni PT Beton")
+assert testimonial.role_line({"person": "Raka Sonidia", "role": "Lead Architect"}) == "Raka Sonidia, Lead Architect"
+testi = {
+    "id": "selftesttm",
+    "kind": "testimonial",
+    "source": {"type": "video", "video_id": "es6-7gWg2JQ", "url": "https://www.youtube.com/watch?v=es6-7gWg2JQ", "title": "Testimoni PT Beton", "channel": "Piranusa", "duration": 200},
+    "testimonials": [{"company": "PT Beton Elemenindo Perkasa", "person": "", "role": "Drafter", "quote": "Kami jadi lebih cepat.", "product": "ZWCAD"}],
+    "images": [],
+}
+testi_card = telegram_view.testimonial_text(testi)
+assert "PT Beton Elemenindo Perkasa" in testi_card and "belum dikirim" in testi_card
+testi_datas = [b.callback_data for row in telegram_view.testimonial_keyboard(testi, True).inline_keyboard for b in row if b.callback_data]
+assert "d:selftesttm:ta" in testi_datas and "d:selftesttm:tw" in testi_datas
+print("testimonial ok")
+
+watch_videos = [{"id": "aaaaaaaaaaa", "title": "Video satu", "url": utils_text.watch_url("aaaaaaaaaaa")}]
+watch_datas = [b.callback_data for row in telegram_view.watch_keyboard(watch_videos).inline_keyboard for b in row]
+assert watch_datas == ["y:a:aaaaaaaaaaa", "y:s:aaaaaaaaaaa"]
+assert telegram_view.parse_watch_cb("y:s:ab_cd-ef123") == {"action": "s", "video": "ab_cd-ef123"}
+saved_state = youtube_watch.STATE_FILE.read_text(encoding="utf-8") if youtube_watch.STATE_FILE.exists() else None
+try:
+    youtube_watch._write({"last_new": "2026-09-27", "last_backlog": "2026-09-23"})
+    monday = youtube_watch.dt.datetime(2026, 9, 28, 9, 30)
+    assert youtube_watch.due(monday) == ["backlog"]
+    assert youtube_watch.due(monday.replace(hour=8)) == []
+    assert youtube_watch.due(youtube_watch.dt.datetime(2026, 9, 29, 10)) == ["new"]
+    youtube_watch.mark("backlog", monday)
+    assert youtube_watch.due(monday) == []
+finally:
+    if saved_state is None:
+        youtube_watch.STATE_FILE.unlink()
+    else:
+        youtube_watch.STATE_FILE.write_text(saved_state, encoding="utf-8")
+print("youtube watch ok")
+
+for text in (bot_app.HELP_TEXT, card, telegram_view.titles_text(draft), testi_card, telegram_view.watch_text("new", watch_videos)):
     visible = text.replace("/wp url", "")
     assert not humanizer.forbidden_chars(visible), humanizer.forbidden_chars(visible)
 assert bot_app.fallback_intent("x" * 250, None)["intent"] == "compose"

@@ -9,6 +9,7 @@ Bot Telegram untuk tim internal. Bahan yang bisa dikirim:
 | Foto dengan link YouTube di caption | Artikel dari video, fotomu jadi gambar utama |
 | Teks panjang (catatan, poin rapat, rilis) | Artikel dari teks itu |
 | Foto sebagai balasan kartu draf | Foto ditambahkan ke bagian artikel yang paling cocok |
+| Link YouTube video testimoni | Masuk modul Testimoni WordPress (bukan artikel) sebagai draf, homepage mati |
 
 ## Susunan artikel
 
@@ -17,7 +18,7 @@ Bot Telegram untuk tim internal. Bahan yang bisa dikirim:
 3. Ringkasan (paragraf plus poin kunci), lalu embed video kalau sumbernya YouTube.
 4. Isi dengan bentuk bebas: paragraf, langkah bernomor, daftar, kutipan, catatan tips. Paling banyak 2 gambar di isi, ditaruh di bagian yang cocok.
 5. Kesimpulan.
-6. CTA yang mengarahkan ke ikon WhatsApp (tombol menyusul).
+6. Kartu CTA WhatsApp: judul pendek dan teks tombol diacak per artikel, kalimat ajakan ditulis AI maksimal 18 kata, link pendek SIPIRA dengan kode acak 7 karakter.
 7. Glosarium, hanya kalau videonya memuat istilah teknis.
 
 Semua teks lewat `humanizer.py`: panduan `prompts/humanizer.md` dipakai sebagai aturan gaya penulis, lalu kode membuang em dash, en dash, tanda hubung, titik koma, emoji, kutip melengkung, dan timestamp. Kalau masih banyak frasa khas AI, bagian itu ditulis ulang otomatis.
@@ -117,10 +118,13 @@ sudo systemctl daemon-reload && sudo systemctl enable --now piranusa-bot
 | `/wp url user password` | Sambungkan WordPress, pesan berisi password dihapus otomatis |
 | `/mode push`, `xml`, `both` | Cara kirim hasil |
 | `/wppost draft` atau `publish` | Status awal artikel |
+| `/youtube` | Cek video channel yang belum jadi artikel atau testimoni |
 | `/models`, `/status`, `/batal`, `/help` | Info dan kontrol |
 
 ## Catatan
 
 1. `piranusa.com` ada di belakang Cloudflare yang membuang header Authorization, jadi bot login lewat cookie plus nonce REST.
 2. SEO Yoast (focus keyphrase, meta description, SEO title, kategori utama) diisi lewat form metabox editor memakai sesi login bot, karena Yoast tidak membuka field itu di REST. Setelah artikel ditulis, ada langkah SEO yang memastikan kata kunci ada di subjudul, judul bagian, dan isi, plus 2 link internal dari artikel yang sudah tayang dan 1 link keluar.
-3. Kelas CSS `pipSubtitle`, `pipSummary`, `pipCallout`, dan `pipCta` sudah terpasang di blok, tinggal diberi gaya di tema kalau mau tampil beda.
+3. Kelas CSS `pipSubtitle`, `pipSummary`, dan `pipCallout` sudah terpasang di blok. Kartu CTA (`pipCtaCard`) membawa gayanya sendiri di blok HTML.
+4. Testimoni: AI mengecek tiap video. Kalau testimoni, bot menyusun perusahaan, pembicara, jabatan, kutipan, dan produk, lalu membuat post `testimoni` berstatus draf. Field ACF diisi lewat form editor klasik. Kalau nama perusahaan tidak disebut di video, tulis namanya bersama link. Tombol Bukan testimoni menulis ulang sebagai artikel.
+5. Pengingat YouTube: bot membandingkan channel `YOUTUBE_CHANNEL_URL` dengan artikel dan testimoni di WordPress. Video lama diingatkan Senin, Rabu, Jumat (3 video per pesan), video baru tiap 2 hari, jam 09.00 WIB, ke semua user bot. Tombol Buat langsung memproses linknya, Lewati menghentikan pengingat untuk video itu.

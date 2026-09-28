@@ -96,8 +96,15 @@ SIPIRA_TEXT = _env(
     "SIPIRA_TEXT",
     "Halo Piranusa, saya tertarik solusi software Piranusa dan mau konsultasi gratis. Boleh dibantu?",
 )
-SIPIRA_BUTTON = _env("SIPIRA_BUTTON", "Konsultasi Gratis via WhatsApp")
 SIPIRA_TIMEOUT = _env_int("SIPIRA_TIMEOUT", 30)
+SIPIRA_CODE_LENGTH = _env_int("SIPIRA_CODE_LENGTH", 7)
+SIPIRA_CODE_ALPHABET = _env("SIPIRA_CODE_ALPHABET", "abcdefghijkmnpqrstuvwxyz23456789")
+
+YOUTUBE_CHANNEL_URL = _env("YOUTUBE_CHANNEL_URL", "https://www.youtube.com/@piranusa/videos")
+REMINDER_HOUR = _env_int("REMINDER_HOUR", 9)
+REMINDER_BACKLOG_DAYS = [int(x) for x in _env_list("REMINDER_BACKLOG_DAYS", ["0", "2", "4"]) if x.isdigit()]
+REMINDER_NEW_EVERY_DAYS = _env_int("REMINDER_NEW_EVERY_DAYS", 2)
+REMINDER_BACKLOG_COUNT = _env_int("REMINDER_BACKLOG_COUNT", 3)
 
 DEEPGRAM_API_KEY = _env("DEEPGRAM_API_KEY", "")
 DEEPGRAM_MODEL = _env("DEEPGRAM_MODEL", "nova-3-general")
