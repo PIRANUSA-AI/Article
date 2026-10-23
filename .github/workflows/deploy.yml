@@ -1,0 +1,28 @@
+name: Deploy Artikel to VPS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'bot/**'
+      - 'scripts/deploy-article.sh'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: artikel-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.repository == 'PIRANUSA-AI/Article' && github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, artikel-vps]
+    timeout-minutes: 20
+    steps:
+      - name: Update code, validate, and restart Artikel
+        env:
+          DEPLOY_SHA: ${{ github.sha }}
+        run: sudo -n /usr/local/sbin/deploy-article "$DEPLOY_SHA"

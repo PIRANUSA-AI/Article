@@ -173,7 +173,7 @@ def _download_audio(video_id, dest_dir):
     for attempt in range(3):
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([utils_text.watch_url(video_id)])
+                ydl.download([video_id if str(video_id).startswith("https://") else utils_text.watch_url(video_id)])
             break
         except Exception as exc:
             last_error = exc
@@ -247,18 +247,25 @@ def _from_deepgram(video_id):
     return {"snippets": snippets, "language": language, "source": "deepgram"}
 
 
-def fetch(video_id):
+def fetch(video_id, duration=None):
     errors = []
+    sparse = None
     for func in (_from_api, _from_ytdlp, _from_deepgram):
         try:
             data = func(video_id)
             if data and data.get("snippets"):
                 data["snippets"] = _dedupe(data["snippets"])
+                if duration and not quality(data["snippets"], duration)["adequate"]:
+                    if sparse is None or len(as_plain_text(data["snippets"])) > len(as_plain_text(sparse["snippets"])):
+                        sparse = data
+                    continue
                 return data
         except TranscriptError as exc:
             errors.append(str(exc))
         except Exception as exc:
             errors.append("%s: %s" % (func.__name__, str(exc)[:160]))
+    if sparse:
+        return sparse
     raise TranscriptError(" | ".join(errors) or "transkrip tidak tersedia")
 
 
@@ -291,6 +298,37 @@ def as_paragraphs(snippets, max_chars=900):
 
 def as_plain_text(snippets):
     return _tidy(" ".join(item["text"] for item in snippets))
+
+
+def quality(snippets, duration):
+    """Reject noise and sparse/repeated captions, including 'halo' in a long clip."""
+    cleaned, intervals = [], []
+    for item in snippets:
+        text = re.sub(r"\[[^\]]*\]|\([^)]*\)|[♪♫]", " ", item.get("text") or "")
+        text = re.sub(r"\b(music|musik|applause|tepuk tangan|silence|hening|instrumental)\b", " ", text, flags=re.I)
+        words = re.findall(r"[^\W\d_]+", text.lower(), re.UNICODE)
+        cleaned.extend(words)
+        if words:
+            start = max(0, float(item.get("start") or 0))
+            intervals.append((start, start + max(0, float(item.get("duration") or 0))))
+    duration = max(1, float(duration or 1))
+    covered, end = 0, 0
+    for start, stop in sorted(intervals):
+        stop = min(duration, stop)
+        covered += max(0, stop - max(start, end))
+        end = max(end, stop)
+    words, unique = len(cleaned), len(set(cleaned))
+    # At least five words for short clips; longer clips need proportional context.
+    required = max(5, min(100, int(duration / 6)))
+    enough = words >= required and unique >= min(12, required) and (
+        duration <= 30 or covered / duration >= 0.08 or words / duration >= 0.35)
+    return {"adequate": enough, "words": words, "unique_words": unique,
+            "coverage": round(covered / duration, 3), "reason": "memadai" if enough else "kosong, noise, repetitif, atau terlalu sedikit dibanding durasi"}
+
+
+def fetch_media(url):
+    """Instagram has no YouTube subtitle API; use configured speech transcription."""
+    return _from_deepgram(url)
 
 
 def _tidy(text):

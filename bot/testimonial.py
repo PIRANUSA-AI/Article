@@ -34,8 +34,8 @@ DETECT_SYSTEM = (
 ) % (config.SITE_TITLE, config.SITE_TITLE, config.SITE_TITLE)
 
 EXTRACT_SYSTEM = (
-    "Kamu menyiapkan entri modul Testimoni untuk situs %s dari transkrip video testimoni pelanggan. "
-    "Satu entri untuk tiap perusahaan pelanggan yang benar benar berbicara di video, paling banyak 6 entri. "
+    "Kamu menyiapkan entri modul Testimoni untuk situs %s dari bahan testimoni pelanggan. "
+    "Satu entri untuk tiap perusahaan pelanggan dengan pengalaman eksplisit dalam ucapan, tulisan yang terbaca, atau teks dari user, paling banyak 6 entri. "
     "Aturan tiap entri:\n"
     "company: nama resmi perusahaan pelanggan seperti yang disebut di judul, deskripsi, atau transkrip, misalnya PT Beton Elemenindo Perkasa. Jangan pernah %s.\n"
     "person: nama pembicara kalau disebut jelas, kalau tidak ada isi string kosong. Jangan mengarang nama.\n"
@@ -83,7 +83,13 @@ def detect(video_info, transcript_text):
 def extract(video_info, transcript_text, products, note=""):
     menu = ", ".join(products) or "(kosong)"
     prompt = "DAFTAR PRODUK: %s\n\n%s" % (menu, _material(video_info, transcript_text, 24000, note))
-    data, _ = qwen_client.chat_json(EXTRACT_SYSTEM, prompt, temperature=0.3, max_tokens=2400)
+    visual_rules = (
+        "\nJika bahan berupa PENGAMATAN VISUAL, gunakan hanya testimoni tertulis yang benar benar terbaca, "
+        "atau pengalaman yang diberikan eksplisit dalam CATATAN USER. Nama perusahaan saja bukan bukti testimoni. "
+        "Jangan mengubah aktivitas, demo atau ekspresi menjadi kutipan pengalaman. Jangan mengarang angka, hasil, nama atau kepuasan. "
+        "Jika bukti pengalaman tidak ada, kembalikan testimonials kosong."
+    )
+    data, _ = qwen_client.chat_json(EXTRACT_SYSTEM + visual_rules, prompt, temperature=0.3, max_tokens=2400)
     items = (data or {}).get("testimonials") if isinstance(data, dict) else None
     lookup = {name.lower(): name for name in products}
     out = []
@@ -109,7 +115,7 @@ def extract(video_info, transcript_text, products, note=""):
         )
     if not out:
         raise TestimonialError(
-            "Video ini testimoni, tapi nama perusahaan pelanggannya tidak disebut di transkrip maupun deskripsi. "
+            "Bukti pengalaman pelanggan atau identitas perusahaan belum cukup terbaca dari ucapan, tulisan visual, deskripsi, atau catatan. "
             "Kirim ulang linknya sambil menulis nama perusahaan dan pembicaranya, misalnya: link lalu PT Contoh Jaya, Budi, Drafter."
         )
     return out[:6]

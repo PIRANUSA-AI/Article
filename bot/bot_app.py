@@ -82,6 +82,9 @@ INTENT_SYSTEM = (
 HELP_TEXT = (
     "<b>Bot Artikel Piranusa</b>\n\n"
     "Yang bisa kamu kirim:\n"
+    "• <b>Link artikel bahasa apa pun</b>: ditulis ulang dalam bahasa Indonesia sesuai konteks Piranusa.\n"
+    "• <b>Link Instagram</b>: postingan, reels, atau story spesifik yang masih dapat diakses.\n"
+    "• <b>Video tanpa narasi memadai</b>: dibaca lewat rangkaian frame berurutan.\n"
     "• <b>Link YouTube</b>: bot ambil transkrip dan cuplikan video, lalu menulis artikel.\n"
     "• <b>Foto</b>, satu atau beberapa sekaligus: bot membaca isi foto lalu menulis artikel. Isi caption kalau ada konteks.\n"
     "• <b>Foto plus link YouTube di caption</b>: artikel dari video, fotomu jadi gambar utama.\n"
@@ -90,7 +93,9 @@ HELP_TEXT = (
     "Mau revisi? Balas kartu draf atau pesan isi artikel dengan permintaanmu. "
     "Kirim foto sebagai balasan untuk menambah gambar. Tulis <i>jadikan gambar utama</i> di caption kalau foto itu untuk sampul.\n\n"
     "<b>Perintah</b>\n"
-    "/artikel link : artikel dari video\n"
+    "/artikel link atau teks : artikel dari sumber yang dikirim\n"
+    "/testimoni link atau teks : testimoni dari pengalaman pelanggan yang terbaca\n"
+    "Thumbnail Qwen memakai 1 dari 8 gaya acak. Tekan Regenerate thumbnail untuk hasil baru.\n"
     "/transkrip link : teks transkrip saja\n"
     "/draf : kartu draf terakhir\n"
     "/revisi permintaan : revisi draf terakhir\n"
@@ -559,6 +564,7 @@ async def on_message(update, context):
     key = STATE.key(update)
     text = message.text
     video_id = utils_text.extract_video_id(text)
+    source_url = utils_text.extract_source_url(text) if not video_id else None
 
     target = None
     if message.reply_to_message:
@@ -567,6 +573,12 @@ async def on_message(update, context):
         target = STATE.edit_target.get(key)
     if target and not video_id:
         await start_revision(update, target, text)
+        return
+
+    if source_url:
+        caption = text.replace(source_url, "").strip()
+        if not start_task(update, create_article(update, "Menulis artikel dari link sumber", source_url=source_url, caption=caption)):
+            await busy_notice(message)
         return
 
     if video_id:
@@ -731,10 +743,10 @@ async def show_titles(message, draft_id):
     drafts.remember_message(draft["id"], sent.chat_id, sent.message_id)
 
 
-async def show_featured_picker(message, draft):
-    candidates = pipeline.featured_candidates(draft)
+async def show_featured_picker(message, draft, source_only=False):
+    candidates = pipeline.featured_candidates(draft, source_only=source_only)
     if not candidates:
-        await reply(message, "Draf ini belum punya gambar. Kirim foto sebagai balasan kartu draf untuk menambahkannya.")
+        await reply(message, "Belum ada gambar di pilihan ini. Tekan Regenerate thumbnail atau kirim foto sebagai balasan kartu draf.", reply_markup=view.featured_keyboard(draft, []))
         return
     media = []
     handles = []
@@ -777,13 +789,21 @@ async def on_button(update, context):
     arg = data["arg"]
     message = query.message
     settings = settings_store.all_values()
+    running = STATE.busy.get(key)
+    if running and not running.done() and action not in ("close", "card", "g", "gs", "v", "tt"):
+        await query.answer("Masih ada proses yang jalan. Tunggu sampai selesai.", show_alert=True)
+        return
     if action == "ta":
-        video_id = (draft.get("source") or {}).get("video_id")
-        if not video_id:
-            await query.answer("Video sumbernya tidak ketemu.", show_alert=True)
-            return
+        source = draft.get("source") or {}
+        video_id = source.get("video_id")
         await query.answer("Menulis ulang sebagai artikel...")
-        if not start_task(update, create_article(update, "Menulis artikel dari video", video_id=video_id, mode="article")):
+        kwargs = {"video_id": video_id} if video_id else ({"source_url": source["url"]} if source.get("url") else {"text": source.get("text") or pipeline.material(draft)})
+        if not start_task(update, create_article(update, "Menulis artikel dari sumber", mode="article", **kwargs)):
+            await busy_notice(message)
+        return
+    if action == "gi":
+        await query.answer("Membuat thumbnail dengan gaya acak...")
+        if not start_task(update, generate_image_job(message, draft)):
             await busy_notice(message)
         return
     try:
@@ -842,9 +862,9 @@ async def handle_button(query, message, draft, action, arg, settings, key):
             reply_markup=ForceReply(selective=True, input_field_placeholder="contoh: ringkas bagian 2"),
         )
         drafts.remember_message(draft["id"], sent.chat_id, sent.message_id)
-    elif action == "g":
+    elif action in ("g", "gs"):
         await query.answer()
-        await show_featured_picker(message, draft)
+        await show_featured_picker(message, draft, source_only=action == "gs")
     elif action == "gf":
         target = next((img for img in draft["images"] if img["key"] == arg), None)
         if not target:
@@ -1127,14 +1147,44 @@ async def cmd_cancel(update, context):
 
 
 async def cmd_artikel(update, context):
-    video_id = utils_text.extract_video_id(" ".join(context.args or []))
-    if not video_id:
-        await reply(update.effective_message, "Tempel link YouTube setelah perintah.\nContoh: <code>/artikel https://youtu.be/dQw4w9WgXcQ</code>")
+    await generate_from_command(update, context, None)
+
+
+async def cmd_testimoni(update, context):
+    await generate_from_command(update, context, "testimonial")
+
+
+async def generate_from_command(update, context, mode):
+    text = " ".join(context.args or []).strip()
+    if not text:
+        await reply(update.effective_message, "Kirim link YouTube, artikel, Instagram, atau teks setelah perintah. Contoh: <code>/artikel catatan lengkap kamu</code>.")
         return
-    STATE.last_video[STATE.key(update)] = video_id
-    rest = utils_text.URL_PATTERN.sub("", " ".join(context.args or [])).strip()
-    if not start_task(update, create_article(update, "Menulis artikel dari video", video_id=video_id, caption=rest)):
+    video_id = utils_text.extract_video_id(text)
+    url = utils_text.extract_source_url(text)
+    if video_id:
+        STATE.last_video[STATE.key(update)] = video_id
+        kwargs = {"video_id": video_id, "caption": utils_text.URL_PATTERN.sub("", text).strip()}
+    elif url:
+        kwargs = {"source_url": url, "caption": text.replace(url, "").strip()}
+    else:
+        kwargs = {"text": text}
+    if not start_task(update, create_article(update, "Menulis %s dari sumber" % ("testimoni" if mode == "testimonial" else "artikel"), mode=mode, **kwargs)):
         await busy_notice(update.effective_message)
+
+
+async def generate_image_job(message, draft):
+    status = await reply(message, "Membuat thumbnail Qwen dengan gaya baru...")
+    try:
+        image = await tracked(status, "Regenerate thumbnail", lambda progress: pipeline.generate_images(draft, progress))
+    except JobFailed:
+        return
+    result = await sync_wordpress(draft, settings_store.all_values())
+    await safe_edit(status, "Thumbnail baru siap: <b>%s</b>." % esc(image["label"]) + sync_note(result))
+    with open(image["path"], "rb") as photo:
+        sent = await message.reply_photo(photo=photo, caption="Thumbnail baru: %s. Kurang cocok? Tekan Regenerate thumbnail lagi." % image["label"],
+                                         reply_markup=view.featured_keyboard(draft, [image]))
+    drafts.remember_message(draft["id"], sent.chat_id, sent.message_id)
+    await send_card(message, draft, "Thumbnail diperbarui")
 
 
 async def cmd_transkrip(update, context):
@@ -1338,6 +1388,7 @@ def build_application():
     app.add_handler(CommandHandler(["start", "halo"], guarded(cmd_start)))
     app.add_handler(CommandHandler(["help", "bantuan"], guarded(cmd_help)))
     app.add_handler(CommandHandler("artikel", guarded(cmd_artikel)))
+    app.add_handler(CommandHandler("testimoni", guarded(cmd_testimoni)))
     app.add_handler(CommandHandler("transkrip", guarded(cmd_transkrip)))
     app.add_handler(CommandHandler(["draf", "draft"], guarded(cmd_draft)))
     app.add_handler(CommandHandler("revisi", guarded(cmd_revise)))

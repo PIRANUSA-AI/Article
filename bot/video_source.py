@@ -64,7 +64,7 @@ def _best_direct_url(info):
     candidates = [
         f
         for f in (info.get("formats") or [])
-        if f.get("url") and f.get("vcodec") not in (None, "none") and (f.get("protocol") or "").startswith("https") and (f.get("ext") or "").lower() in ("mp4", "webm", "mkv", "mov", "3gp")
+        if f.get("url") and f.get("vcodec") != "none" and (f.get("protocol") or "https").startswith("https") and (f.get("ext") or "").lower() in ("mp4", "webm", "mkv", "mov", "3gp")
     ]
     if not candidates:
         broad = [f for f in (info.get("formats") or []) if f.get("url") and f.get("vcodec") not in (None, "none") and (f.get("protocol") or "").startswith("https")]
@@ -109,7 +109,7 @@ def _download_source(video_info, dest_dir):
     dest_dir = Path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
     for existing in sorted(dest_dir.glob("source.*")):
-        if existing.stat().st_size > 200000:
+        if existing.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov") and existing.stat().st_size > 1000:
             return str(existing)
     cap = config.FRAME_MAX_HEIGHT
     opts = {
@@ -120,7 +120,9 @@ def _download_source(video_info, dest_dir):
         "user_agent": config.USER_AGENT,
         "format": "bv*[height<=%d]/b[height<=%d]/bv*/b" % (cap, cap),
         "outtmpl": str(dest_dir / "source.%(ext)s"),
-        "retries": 3,
+        "retries": 1,
+        "socket_timeout": 30,
+        "fragment_retries": 1,
     }
     proxy = settings_store.proxy()
     if proxy:
@@ -130,11 +132,11 @@ def _download_source(video_info, dest_dir):
         opts["cookiefile"] = cookies
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([video_info.get("url") or utils_text.watch_url(video_info["video_id"])])
+            ydl.download([video_info.get("download_url") or video_info.get("url") or utils_text.watch_url(video_info["video_id"])])
     except Exception:
         return None
     for made in sorted(dest_dir.glob("source.*")):
-        if made.stat().st_size > 200000:
+        if made.suffix.lower() in (".mp4", ".webm", ".mkv", ".mov") and made.stat().st_size > 1000:
             return str(made)
     return None
 

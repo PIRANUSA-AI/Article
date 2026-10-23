@@ -112,6 +112,11 @@ DEEPGRAM_TIMEOUT = _env_int("DEEPGRAM_TIMEOUT", 600)
 
 FRAME_COUNT = _env_int("FRAME_COUNT", 10)
 FRAME_MAX_HEIGHT = _env_int("FRAME_MAX_HEIGHT", 720)
+VISION_MAX_FRAMES = max(12, min(240, _env_int("VISION_MAX_FRAMES", 120)))
+VISION_SCAN_TIMEOUT = _env_int("VISION_SCAN_TIMEOUT", 240)
+QWEN_IMAGE_MODEL = _env("QWEN_IMAGE_MODEL", "qwen-image-2.0")
+QWEN_IMAGE_URL = _env("QWEN_IMAGE_URL", "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
+QWEN_IMAGE_SIZE = _env("QWEN_IMAGE_SIZE", "1536*864")
 FFMPEG_BIN = _env("FFMPEG_BIN", "ffmpeg")
 
 MEDIA_HOST = _env("MEDIA_HOST", "0.0.0.0")

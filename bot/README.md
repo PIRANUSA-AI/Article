@@ -5,11 +5,36 @@ Bot Telegram untuk tim internal. Bahan yang bisa dikirim:
 | Kirim ini | Hasilnya |
 |---|---|
 | Link YouTube | Artikel dari transkrip, cuplikan video terbaik ditaruh di isi, thumbnail jadi gambar utama |
+| Link artikel dalam bahasa apa pun | Isi halaman diekstrak, ditulis ulang dalam bahasa Indonesia sesuai konteks Piranusa, sumber tetap dicantumkan |
+| Link Instagram | Post foto, carousel, reel, atau story spesifik yang masih dapat diakses dibaca sebagai bahan artikel |
 | Satu foto atau album | Qwen membaca isi foto lalu menulis artikel, foto terbaik jadi gambar utama |
 | Foto dengan link YouTube di caption | Artikel dari video, fotomu jadi gambar utama |
 | Teks panjang (catatan, poin rapat, rilis) | Artikel dari teks itu |
 | Foto sebagai balasan kartu draf | Foto ditambahkan ke bagian artikel yang paling cocok |
 | Link YouTube video testimoni | Masuk modul Testimoni WordPress (bukan artikel) sebagai draf, homepage mati |
+| `/testimoni link atau teks` | Membuat draf testimoni dari ucapan, tulisan yang terbaca, atau pengalaman pelanggan yang dikirim user |
+
+### Video dengan transkrip minim
+
+Transkrip dinilai dari jumlah kata, keragaman kata, cakupan waktu, dan durasi video. Subtitle `[musik]`, repetisi, atau satu kata seperti `halo` untuk video 10 menit belum dianggap memadai. Bot tetap mencoba backend subtitle dan Deepgram sebelum memakai visual. Jika semua transkrip tidak tersedia, visual dipakai sebagai pengamatan, bukan dianggap bukti bahwa videonya bisu.
+
+Saat transkrip tidak memadai, video diunduh satu kali dan ffmpeg mengambil frame dalam satu lintasan. Video hingga 90 detik diambil tiap 1 detik; video lebih panjang tiap 10 detik. Interval diperbesar untuk menjaga batas `VISION_MAX_FRAMES` (default 120). Frame disusun berurutan dalam contact sheet berisi maksimal 12 sel dengan waktu. Setiap chunk dibaca dengan konteks catatan sebelumnya. Semua catatan digunakan untuk menulis, sedangkan maksimal 6 frame penting dipilih sebagai kandidat gambar. Video dengan percakapan memadai tetap memakai alur transkrip biasa.
+
+Testimoni visual hanya menggunakan pengalaman pelanggan yang terbaca dari tulisan atau diberikan eksplisit oleh user. Demo, ekspresi wajah, dan aktivitas bukan bukti kepuasan atau hasil bisnis. Jika bukti tidak cukup, bot meminta bahan tambahan.
+
+### Instagram dan teks
+
+Kirim link `instagram.com/p/...`, `/reel/...`, atau `/stories/username/id/...`. Cookie `YTDLP_COOKIES` digunakan untuk akses story atau media yang memerlukan akun berizin. Story kedaluwarsa dan media tanpa akses menghasilkan pesan kegagalan yang jelas. Dukungan ekstraksi mengikuti kemampuan yt-dlp dan dapat dipengaruhi perubahan Instagram. Audio reel menggunakan Deepgram jika `DEEPGRAM_API_KEY` tersedia; jika transkrip tidak memadai, bot membaca urutan visual. Foto dan carousel dibaca oleh Qwen vision. Batas satu kiriman adalah 12 media; anggaran frame dibagi di antara video dalam kiriman.
+
+Teks panjang dapat langsung dikirim. Untuk teks singkat atau agar pasti membuat artikel baru, gunakan `/artikel teks kamu`. Untuk testimoni dari teks gunakan `/testimoni pengalaman pelanggan beserta nama perusahaan`.
+
+### Thumbnail Qwen acak
+
+Artikel baru tanpa foto kiriman mendapat satu thumbnail dari API Qwen dengan gaya acak dari delapan arah visual yang disetujui: thumbnail YouTube heboh, editorial surealis, fotografi dokumenter, sketsa arsitektur liar, poster tipografi brutalist, pabrik mini 3D, origami sinematik, dan papercut. Komik, anime, dan cyberpunk tidak dipakai. Konsep dan komposisi disusun sesuai isi artikel, bukan hanya mengganti filter pada adegan yang sama.
+
+Tekan **Regenerate thumbnail** bila hasil kurang cocok. Setiap klik membuat satu gambar baru, memakai gaya yang berbeda dari hasil terakhir, dan memasangnya sebagai gambar utama. Gambar lama tetap tersedia di **Gambar utama** dan dapat dikembalikan lewat **Batalkan perubahan terakhir**. Jika API gagal, thumbnail lama tetap dipakai. Foto kiriman user tetap diprioritaskan saat artikel pertama dibuat. Regenerasi ikut memperbarui WordPress melalui pemeriksaan konflik yang sama seperti perubahan draf lain.
+
+Konfigurasi `QWEN_IMAGE_MODEL`, `QWEN_IMAGE_URL`, dan `QWEN_IMAGE_SIZE` ada di `.env.example`. Endpoint gambar harus cocok dengan region/workspace dan izin key. Format request mengikuti [dokumentasi resmi Qwen Image](https://www.alibabacloud.com/help/en/model-studio/qwen-image-api). Model chat/vision tidak menghasilkan file gambar lewat chat completion.
 
 ## Susunan artikel
 
@@ -74,12 +99,17 @@ cd bot
 python -m venv ../.venv
 ../.venv/Scripts/python.exe -m pip install -r requirements.txt
 ../.venv/Scripts/python.exe selftest.py
+../.venv/Scripts/python.exe test_sources.py
 ../.venv/Scripts/python.exe bot_app.py
 ```
 
 Butuh `ffmpeg` di PATH.
 
 ## Deploy ke VPS (Docker)
+
+Repo ini memakai runner khusus `artikel-vps` untuk deployment `/var/www/artikel`. Workflow `.github/workflows/deploy.yml` berjalan pada push ke `main` yang mengubah kode bot/deployment, atau lewat `workflow_dispatch`. Runner berjalan sebagai user `artikel-runner`; perintah deployment terbatas pada `/usr/local/sbin/deploy-article`.
+
+Deployment hanya melakukan fast forward dari `origin/main`, menjaga `.env` dan folder data, membangun image Docker, lalu menjalankan dua suite tes offline sebelum container diperbarui. Suite tes memakai direktori data sementara. Tidak ada sinkronisasi balik draf atau credential ke GitHub. Jika build atau tes gagal, container lama tetap berjalan. Perubahan manual pada file kode yang dilacak Git akan menghentikan deployment agar tidak tertimpa.
 
 ```bash
 cd /opt/piranusa-bot/bot
@@ -103,7 +133,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now piranusa-bot
 
 | Perintah | Guna |
 |---|---|
-| `/artikel link` | Artikel dari video |
+| `/artikel link atau teks` | Artikel dari YouTube, artikel web, Instagram, atau teks |
+| `/testimoni link atau teks` | Testimoni dari pengalaman pelanggan yang tersedia di sumber |
 | `/transkrip link` | Teks transkrip saja |
 | `/draf` | Kartu draf terakhir |
 | `/revisi permintaan` | Revisi draf terakhir |

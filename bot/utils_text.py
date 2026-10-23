@@ -6,6 +6,12 @@ URL_PATTERN = re.compile(
     re.IGNORECASE,
 )
 PLAIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{11}$")
+WEB_URL_PATTERN = re.compile(r"https?://[^\s<>]+", re.I)
+
+
+def extract_source_url(text):
+    match = WEB_URL_PATTERN.search(text or "")
+    return match.group(0).rstrip(".,;!)]}") if match else None
 
 
 def extract_video_id(text):

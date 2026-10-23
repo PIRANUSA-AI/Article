@@ -5,3 +5,4 @@ openai>=1.55.0
 requests>=2.32.0
 Pillow>=10.4.0
 curl_cffi>=0.7.0
+trafilatura>=2.0.0

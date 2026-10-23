@@ -48,6 +48,8 @@ def _duration(seconds):
 
 def source_line(draft):
     source = draft.get("source") or {}
+    if source.get("type") in ("article", "instagram"):
+        return '%s "%s"' % ("artikel sumber" if source["type"] == "article" else "Instagram", esc(source.get("title")))
     if draft["kind"] == "video":
         return 'video "%s" (%s, %s)' % (esc((source.get("title") or "").strip()), esc((source.get("channel") or "").strip()), _duration(source.get("duration")))
     users = sum(1 for img in draft["images"] if img.get("origin") == "user")
@@ -73,6 +75,8 @@ def card_text(draft, headline="Draf siap"):
         detail += ", glosarium %d istilah" % info["glossary"]
     lines.append(detail)
     lines.append("Gambar utama: %s" % ("ada" if info["featured"] else "belum ada"))
+    if draft.get("thumbnail_error"):
+        lines.append("Thumbnail Qwen belum berhasil. Tekan Regenerate thumbnail untuk mencoba lagi.")
     report = article_generator.seo_report(article, (draft.get("wp") or {}).get("slug") or wxr_builder.slug_for(draft))
     if report["keyword"]:
         checks = [("judul", report["in_title"]), ("paragraf awal", report["in_intro"]), ("subjudul isi", report["in_heading"]), ("slug", report["in_slug"]), ("meta", report["in_meta"])]
@@ -106,6 +110,7 @@ def card_keyboard(draft, wp_ready):
         rows.append([InlineKeyboardButton("Edit di WordPress", url=wp["admin_edit"]), view])
     rows.append([InlineKeyboardButton("Pilih judul", callback_data=cb(draft["id"], "tt")), InlineKeyboardButton("Lihat isi", callback_data=cb(draft["id"], "v"))])
     rows.append([InlineKeyboardButton("Revisi lewat chat", callback_data=cb(draft["id"], "e")), InlineKeyboardButton("Gambar utama", callback_data=cb(draft["id"], "g"))])
+    rows.append([InlineKeyboardButton("Regenerate thumbnail", callback_data=cb(draft["id"], "gi"))])
     last = []
     if wp.get("post_id"):
         if wp.get("status") == "publish":
@@ -154,13 +159,16 @@ def featured_keyboard(draft, candidates):
         mark = " aktif" if img["role"] == "featured" else ""
         buttons.append(InlineKeyboardButton("%d%s" % (index + 1, mark), callback_data=cb(draft["id"], "gf", img["key"])))
     rows = [buttons[i : i + 3] for i in range(0, len(buttons), 3)]
+    rows.append([InlineKeyboardButton("Regenerate thumbnail", callback_data=cb(draft["id"], "gi"))])
+    if any(img.get("origin") == "generated" for img in draft["images"]):
+        rows.append([InlineKeyboardButton("Foto sumber", callback_data=cb(draft["id"], "gs")), InlineKeyboardButton("Ilustrasi Qwen", callback_data=cb(draft["id"], "g"))])
     rows.append([InlineKeyboardButton("Tutup", callback_data=cb(draft["id"], "close"))])
     return InlineKeyboardMarkup(rows)
 
 
 def candidate_caption(index, img):
     note = img.get("note") or {}
-    origin = {"thumbnail": "thumbnail video", "user": "foto kiriman kamu", "requested": "frame pilihanmu"}.get(img.get("origin"), "menit %s" % img.get("label"))
+    origin = {"thumbnail": "thumbnail video", "user": "foto kiriman kamu", "requested": "frame pilihanmu", "generated": "Ilustrasi AI, %s" % img.get("label")}.get(img.get("origin"), "menit %s" % img.get("label"))
     text = "%d. %s" % (index + 1, origin)
     if note.get("cover_score"):
         text += ", skor sampul %d dari 10" % round(note["cover_score"])

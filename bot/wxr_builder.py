@@ -234,6 +234,9 @@ def render_content(draft, media):
         blocks.append(_heading("Glosarium", 2))
         blocks.append(_table(["Istilah", "Arti"], [[g["term"], g["definition"]] for g in article["glossary"]], "pipGlossary"))
 
+    if kind in ("article", "instagram") and video_url:
+        blocks.append(_paragraph("Sumber: [Lihat sumber asli](%s)." % video_url))
+
     return "\n\n".join(blocks)
 
 
